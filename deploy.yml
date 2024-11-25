@@ -1,25 +1,67 @@
 ---
 - name: Deploy Dockerized Website
   hosts: web
-  become: yes  # Add become at the play level
+  become: yes
   vars:
-    ansible_ssh_private_key_file: "{{ ansible_private_key }}"
+    ansible_ssh_private_key_file: "{{ ansible_private_key | default(omit) }}"
+    docker_image: "demonharsh124/websiteimage"
+    container_name: "website"
+    host_port: 80
+    container_port: 80
+  
+  pre_tasks:
+    - name: Validate required variables
+      assert:
+        that:
+          - git_hash is defined
+          - git_hash | length > 0
+        fail_msg: "git_hash must be provided"
+
   tasks:
-    - name: Ensure Docker is installed
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required system packages
       apt:
         name: 
-          - docker.io
-          - python3-pip  # Add Python pip
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - gnupg
+          - python3-pip
+        state: present
+
+    - name: Add Docker official GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker CE
+      apt:
+        name: 
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
         state: present
         update_cache: yes
 
     - name: Install Docker Python library
       pip:
-        name: docker
+        name: 
+          - docker
+          - requests
         state: present
 
-    - name: Start Docker service
-      service:
+    - name: Ensure Docker service is started
+      systemd:
         name: docker
         state: started
         enabled: yes
@@ -30,24 +72,82 @@
         groups: docker
         append: yes
 
-    - name: Pull Docker image from Docker Hub
+    - name: Log in to Docker Hub
+      docker_login:
+        username: "{{ docker_user | default(omit) }}"
+        password: "{{ docker_pass | default(omit) }}"
+        state: present
+      when: docker_user is defined and docker_pass is defined
+
+    - name: Pull Docker image
       docker_image:
-        name: demonharsh124/website
+        name: "{{ docker_image }}"
         tag: "{{ git_hash }}"
         source: pull
-        force_source: yes  # Force pull even if image exists
+        force_source: yes
+      register: image_pull_result
+      retries: 3
+      delay: 10
+      until: image_pull_result is success
 
-    - name: Stop and remove any running container with the same name
+    - name: Stop existing container
       docker_container:
-        name: website
+        name: "{{ container_name }}"
         state: absent
-        force: yes
+        force_kill: yes
 
-    - name: Run the Docker container
+    - name: Run Docker container
       docker_container:
-        name: website
-        image: "demonharsh124/website:{{ git_hash }}"  # Added quotes and full image name
+        name: "{{ container_name }}"
+        image: "{{ docker_image }}:{{ git_hash }}"
         state: started
+        restart: yes
         restart_policy: always
         published_ports:
-          - "80:80"
+          - "{{ host_port }}:{{ container_port }}"
+      register: container_deployment
+
+    - name: Verify container is running
+      docker_container_info:
+        name: "{{ container_name }}"
+      register: container_info
+      failed_when: not container_info.container.State.Running
+      retries: 3
+      delay: 5
+      until: container_info.container.State.Running
+
+  post_tasks:
+    - name: Clean up old Docker images
+      docker_prune:
+        images: yes
+        images_filters:
+          - "dangling=true"
+      ignore_errors: yes
+
+  handlers:
+    - name: Restart Docker
+      systemd:
+        name: docker
+        state: restarted
+
+  # Error handling and logging
+  vars_prompt:
+    - name: continue_on_error
+      prompt: "Continue on error? (yes/no)"
+      default: "yes"
+      private: no
+
+  # Optional logging
+  vars:
+    log_file: "/var/log/ansible_deployment.log"
+
+  post_tasks:
+    - name: Log deployment status
+      copy:
+        content: |
+          Deployment of {{ docker_image }}:{{ git_hash }}
+          Status: {% if container_deployment is success %}SUCCESS{% else %}FAILED{% endif %}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+        dest: "{{ log_file }}"
+      when: container_deployment is defined
+      become: yes
