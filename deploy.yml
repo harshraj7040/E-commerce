@@ -1,38 +1,27 @@
 ---
-- name: Deploy Website to EC2
+- name: Deploy Dockerized Website
   hosts: web
   vars:
-    git_hash: "{{ git_hash }}"  # Receives the git hash passed from Jenkins
+    ansible_ssh_private_key_file: "{{ ansible_private_key }}"  # SSH private key to access EC2 instance
   tasks:
-    - name: Install Docker if not present
+    - name: Ensure Docker is installed
       become: yes
       apt:
-        name: docker-ce
+        name: docker.io
         state: present
         update_cache: yes
-        force: yes
 
-    - name: Add Docker's official GPG key (if not already added)
+    - name: Start Docker service
       become: yes
-      apt_key:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        state: present
-
-    - name: Add Docker repository
-      become: yes
-      apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release | lower }} stable"
-        state: present
-
-    - name: Update apt cache
-      become: yes
-      apt:
-        update_cache: yes
+      service:
+        name: docker
+        state: started
+        enabled: yes
 
     - name: Pull Docker image from Docker Hub
       docker_image:
         name: demonharsh124/website
-        tag: "{{ git_hash }}"
+        tag: "{{ git_hash }}"  # Use git_hash passed from Jenkins or a default value
         source: pull
 
     - name: Stop and remove any running container with the same name
