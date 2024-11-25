@@ -50,6 +50,8 @@
       docker_login:
         username: "{{ docker_user }}"
         password: "{{ docker_pass }}"
+      register: login_status
+      failed_when: login_status.failed
 
     - name: Pull the Docker image
       docker_image:
