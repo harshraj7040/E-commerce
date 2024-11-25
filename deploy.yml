@@ -1,39 +1,52 @@
 ---
 - name: Deploy Dockerized Website
   hosts: web
+  become: yes  # Add become at the play level
   vars:
-    ansible_ssh_private_key_file: "{{ ansible_private_key }}"  # SSH private key to access EC2 instance
+    ansible_ssh_private_key_file: "{{ ansible_private_key }}"
   tasks:
     - name: Ensure Docker is installed
-      become: yes
       apt:
-        name: docker.io
+        name: 
+          - docker.io
+          - python3-pip  # Add Python pip
         state: present
         update_cache: yes
 
+    - name: Install Docker Python library
+      pip:
+        name: docker
+        state: present
+
     - name: Start Docker service
-      become: yes
       service:
         name: docker
         state: started
         enabled: yes
 
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
     - name: Pull Docker image from Docker Hub
       docker_image:
         name: demonharsh124/website
-        tag: "{{ git_hash }}"  # Use git_hash passed from Jenkins or a default value
+        tag: "{{ git_hash }}"
         source: pull
+        force_source: yes  # Force pull even if image exists
 
     - name: Stop and remove any running container with the same name
       docker_container:
         name: website
         state: absent
-        force: yes  # Ensure the container is stopped and removed
+        force: yes
 
     - name: Run the Docker container
       docker_container:
         name: website
-        image: demonharsh124/website:{{ git_hash }}
+        image: "demonharsh124/website:{{ git_hash }}"  # Added quotes and full image name
         state: started
         restart_policy: always
         published_ports:
