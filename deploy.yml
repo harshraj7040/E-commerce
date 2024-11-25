@@ -4,11 +4,29 @@
   vars:
     git_hash: "{{ git_hash }}"  # Receives the git hash passed from Jenkins
   tasks:
-    - name: Ensure Docker is installed
+    - name: Install Docker if not present
       become: yes
       apt:
-        name: docker.io
+        name: docker-ce
         state: present
+        update_cache: yes
+        force: yes
+
+    - name: Add Docker's official GPG key (if not already added)
+      become: yes
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      become: yes
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release | lower }} stable"
+        state: present
+
+    - name: Update apt cache
+      become: yes
+      apt:
         update_cache: yes
 
     - name: Pull Docker image from Docker Hub
@@ -21,7 +39,7 @@
       docker_container:
         name: website
         state: absent
-        force_kill: yes  # Ensure container is stopped and removed, forcefully if needed
+        force: yes  # Ensure the container is stopped and removed
 
     - name: Run the Docker container
       docker_container:
