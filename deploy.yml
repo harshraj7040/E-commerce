@@ -1,34 +1,33 @@
 ---
-- name: Deploy E-commerce Website to EC2
-  hosts: localhost
+- name: Deploy Website to EC2
+  hosts: web
   vars:
     git_hash: "{{ git_hash }}"  # Receives the git hash passed from Jenkins
-    docker_image: "demonharsh124/website:{{ git_hash }}"
-    container_name: "ecommerce-website"
   tasks:
+    - name: Ensure Docker is installed
+      become: yes
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
     - name: Pull Docker image from Docker Hub
       docker_image:
-        name: "{{ docker_image }}"
+        name: demonharsh124/website
+        tag: "{{ git_hash }}"
         source: pull
 
     - name: Stop and remove any running container with the same name
       docker_container:
-        name: "{{ container_name }}"
+        name: website
         state: absent
-        force: yes
+        force_kill: yes  # Ensure container is stopped and removed, forcefully if needed
 
-    - name: Run the updated Docker container
+    - name: Run the Docker container
       docker_container:
-        name: "{{ container_name }}"
-        image: "{{ docker_image }}"
+        name: website
+        image: demonharsh124/website:{{ git_hash }}
         state: started
         restart_policy: always
         published_ports:
           - "80:80"
-
-    - name: Verify the container is running
-      shell: "docker ps | grep '{{ container_name }}'"
-      register: container_status
-      failed_when: container_status.rc != 0
-      ignore_errors: false
-      changed_when: false
