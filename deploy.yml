@@ -3,10 +3,10 @@
   hosts: web
   become: true
   vars:
-    docker_user: "{{ lookup('env', 'DOCKER_USER') }}"  # Docker username from environment variables
-    docker_pass: "{{ lookup('env', 'DOCKER_PASS') }}"  # Docker password from environment variables
-    image_name: "website"
-    commit_hash: "{{ git_hash }}"  # Git commit hash passed from Jenkins
+    docker_user: "{{ lookup('env', 'DOCKER_USER') }}"
+    docker_pass: "{{ lookup('env', 'DOCKER_PASS') }}"
+    image_name: "websiteimage"
+    commit_hash: "{{ image_tag }}"  # Using the passed image_tag
 
   tasks:
     - name: Install prerequisite packages
@@ -21,7 +21,7 @@
 
     - name: Add Docker GPG key
       shell: |
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - 
       register: add_gpg_key
       changed_when: "'OK' in add_gpg_key.stdout"
 
@@ -50,10 +50,8 @@
       docker_login:
         username: "{{ docker_user }}"
         password: "{{ docker_pass }}"
-      register: login_status
-      failed_when: login_status.failed
 
-    - name: Pull the Docker image
+    - name: Pull the Docker image with the latest tag
       docker_image:
         name: "{{ docker_user }}/{{ image_name }}"
         tag: "{{ commit_hash }}"
@@ -65,7 +63,7 @@
         state: absent
         force_kill: yes  # Ensures container is forcefully stopped
 
-    - name: Run the Docker container
+    - name: Run the Docker container with the latest image
       docker_container:
         name: website
         image: "{{ docker_user }}/{{ image_name }}:{{ commit_hash }}"
