@@ -3,7 +3,7 @@
   hosts: web
   become: true
   vars:
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'  # Disable strict host key checking for SSH
     docker_user: "{{ lookup('env', 'DOCKER_USER') }}"  # Retrieve Docker Hub username from environment variable
     docker_pass: "{{ lookup('env', 'DOCKER_PASS') }}"  # Retrieve Docker Hub password from environment variable
     image_name: "websiteimage"  # Docker image name
@@ -43,7 +43,7 @@
       docker_container:
         name: website
         state: absent
-        force_kill: yes
+        force_kill: yes  # Forcefully stop and remove the existing container
 
     - name: Run new website container
       docker_container:
@@ -52,4 +52,4 @@
         state: started
         ports:
           - "80:80"  # Map port 80 of the container to port 80 of the host
-        restart_policy: always
+        restart_policy: always  # Ensure the container restarts if it stops
