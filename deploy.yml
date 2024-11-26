@@ -12,14 +12,30 @@
   tasks:
     - name: Ensure required packages are installed
       apt:
+        update_cache: yes
+        force_apt_get: yes
         pkg:
           - apt-transport-https
           - ca-certificates
           - curl
           - software-properties-common
           - docker.io
-        state: present
-        update_cache: yes
+      register: install_packages
+
+    - name: Check if there are any held packages
+      shell: dpkg --get-selections | grep hold
+      register: held_packages
+      ignore_errors: yes
+
+    - name: Debug held packages
+      debug:
+        msg: "{{ held_packages.stdout_lines }}"
+
+    - name: Resolve held packages if any
+      apt:
+        state: latest
+        pkg: "{{ held_packages.stdout_lines | map('regex_replace', ' hold', '') | list }}"
+      when: held_packages.stdout_lines | length > 0
 
     - name: Ensure Docker service is running
       service:
