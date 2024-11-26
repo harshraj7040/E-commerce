@@ -15,27 +15,9 @@
         state: absent
       ignore_errors: yes
 
-    - name: Remove conflicting packages
-      apt:
-        name: containerd
-        state: absent
-      ignore_errors: yes
-
     - name: Update package lists
       apt:
         update_cache: yes
-
-    - name: Ensure required packages are installed
-      apt:
-        name:
-          - apt-transport-https
-          - ca-certificates
-          - curl
-          - software-properties-common
-          - docker.io
-        state: present
-        update_cache: yes
-      register: install_packages
 
     - name: Check if there are any held packages
       shell: dpkg --get-selections | grep hold
@@ -60,6 +42,18 @@
         state: latest
         pkg: "{{ held_packages.stdout_lines | map('regex_replace', ' hold', '') | list }}"
       when: held_packages.stdout_lines | length > 0
+
+    - name: Ensure required packages are installed
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - docker.io
+        state: present
+        update_cache: yes
+      register: install_packages
 
     - name: Ensure Docker service is running
       service:
