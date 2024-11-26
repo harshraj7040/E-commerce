@@ -1,4 +1,3 @@
----
 - name: Deploy Dockerized Website
   hosts: web
   become: true
@@ -6,41 +5,21 @@
     docker_user: "{{ lookup('env', 'DOCKER_USER') }}"
     docker_pass: "{{ lookup('env', 'DOCKER_PASS') }}"
     image_name: "websiteimage"
-    commit_hash: "{{ image_tag }}"  # Using the passed image_tag
+    commit_hash: "{{ image_tag | default('latest') }}"
 
   tasks:
-    - name: Install prerequisite packages
+    - name: Ensure required packages are installed
       apt:
-        name:
+        pkg:
           - apt-transport-https
           - ca-certificates
           - curl
           - software-properties-common
+          - docker.io
         state: present
         update_cache: yes
 
-    - name: Add Docker GPG key
-      shell: |
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - 
-      register: add_gpg_key
-      changed_when: "'OK' in add_gpg_key.stdout"
-
-    - name: Add Docker repository
-      shell: |
-        add-apt-repository -y "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-      register: add_repo
-      changed_when: "'added' in add_repo.stdout or 'already exists' in add_repo.stdout"
-
-    - name: Update package list
-      apt:
-        update_cache: yes
-
-    - name: Install Docker CE
-      apt:
-        name: docker-ce
-        state: present
-
-    - name: Start and enable Docker service
+    - name: Ensure Docker service is running
       service:
         name: docker
         state: started
@@ -51,19 +30,20 @@
         username: "{{ docker_user }}"
         password: "{{ docker_pass }}"
 
-    - name: Pull the Docker image with the latest tag
+    - name: Pull Docker image
       docker_image:
         name: "{{ docker_user }}/{{ image_name }}"
         tag: "{{ commit_hash }}"
         source: pull
+        state: present
 
-    - name: Stop and remove any existing container
+    - name: Stop existing website container
       docker_container:
         name: website
         state: absent
-        force_kill: yes  # Ensures container is forcefully stopped
+        force_kill: yes
 
-    - name: Run the Docker container with the latest image
+    - name: Run new website container
       docker_container:
         name: website
         image: "{{ docker_user }}/{{ image_name }}:{{ commit_hash }}"
