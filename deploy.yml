@@ -1,85 +1,87 @@
-- name: Deploy Dockerized Website
+---
+- name: Deploy Dockerized Website on EC2
   hosts: web
   become: true
   vars:
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
     docker_user: "{{ lookup('env', 'DOCKER_USER') }}"
     docker_pass: "{{ lookup('env', 'DOCKER_PASS') }}"
     image_name: "websiteimage"
-    commit_hash: "{{ image_tag | default('latest') }}"
+    commit_hash: "{{ git_commit_hash }}"  
 
   tasks:
-    - name: Remove conflicting containerd package
-      apt:
-        name: containerd
-        state: absent
-      ignore_errors: yes
-
-    - name: Update package lists
-      apt:
-        update_cache: yes
-
-    - name: Check if there are any held packages
-      shell: dpkg --get-selections | grep hold
-      register: held_packages
-      ignore_errors: yes
-
-    - name: Debug held packages
-      debug:
-        msg: "{{ held_packages.stdout_lines }}"
-
-    - name: Unhold any held packages
-      apt:
-        name: "{{ item }}"
-        state: present
-      with_items:
-        - containerd
-        - docker.io
-      when: held_packages.stdout_lines | length > 0
-
-    - name: Resolve held packages if any
-      apt:
-        state: latest
-        pkg: "{{ held_packages.stdout_lines | map('regex_replace', ' hold', '') | list }}"
-      when: held_packages.stdout_lines | length > 0
-
-    - name: Ensure required packages are installed
+    # Install required dependencies for Docker installation
+    - name: Install required packages
       apt:
         name:
           - apt-transport-https
           - ca-certificates
           - curl
           - software-properties-common
-          - docker.io
         state: present
         update_cache: yes
-      register: install_packages
 
-    - name: Ensure Docker service is running
+    # Add Docker GPG key
+    - name: Add Docker GPG key
+      shell: |
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+      register: add_gpg_key
+      changed_when: "'OK' in add_gpg_key.stdout"
+
+    # Add Docker repository
+    - name: Add Docker repository
+      shell: |
+        add-apt-repository -y "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+      register: add_repo
+      changed_when: "'added' in add_repo.stdout or 'already exists' in add_repo.stdout"
+
+    # Update package list after adding Docker repository
+    - name: Update package list
+      apt:
+        update_cache: yes
+
+    # Install Docker
+    - name: Install Docker
+      apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+
+    # Install Docker Compose if needed (optional, if using Docker Compose)
+    - name: Install Docker Compose
+      apt:
+        name: docker-compose
+        state: present
+        update_cache: yes
+      when: docker_compose is defined and docker_compose == true
+
+    # Start Docker service
+    - name: Start Docker service
       service:
         name: docker
         state: started
         enabled: true
 
+    # Log in to Docker Hub
     - name: Log in to Docker Hub
       docker_login:
         username: "{{ docker_user }}"
         password: "{{ docker_pass }}"
 
+    # Pull the Docker image from Docker Hub
     - name: Pull Docker image
       docker_image:
         name: "{{ docker_user }}/{{ image_name }}"
         tag: "{{ commit_hash }}"
         source: pull
-        state: present
 
-    - name: Stop existing website container
+    # Stop and remove any existing container named 'website'
+    - name: Stop and remove existing container
       docker_container:
         name: website
         state: absent
-        force_kill: yes
 
-    - name: Run new website container
+    # Run the Docker container with the specified image and port mapping
+    - name: Run the Docker container
       docker_container:
         name: website
         image: "{{ docker_user }}/{{ image_name }}:{{ commit_hash }}"
