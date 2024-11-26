@@ -2,6 +2,7 @@
   hosts: web
   become: true
   vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
     docker_user: "{{ lookup('env', 'DOCKER_USER') }}"
     docker_pass: "{{ lookup('env', 'DOCKER_PASS') }}"
     image_name: "websiteimage"
