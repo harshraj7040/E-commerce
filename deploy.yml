@@ -1,15 +1,20 @@
----
 - name: Deploy Dockerized Website
   hosts: web
   become: true
   vars:
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'  # Disable strict host key checking for SSH
-    docker_user: "{{ lookup('env', 'DOCKER_USER') }}"  # Retrieve Docker Hub username from environment variable
-    docker_pass: "{{ lookup('env', 'DOCKER_PASS') }}"  # Retrieve Docker Hub password from environment variable
-    image_name: "websiteimage"  # Docker image name
-    commit_hash: "{{ image_tag | default('latest') }}"  # Use the 'image_tag' variable passed by Jenkins or fallback to 'latest'
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    docker_user: "{{ lookup('env', 'DOCKER_USER') }}"
+    docker_pass: "{{ lookup('env', 'DOCKER_PASS') }}"
+    image_name: "websiteimage"
+    commit_hash: "{{ image_tag | default('latest') }}"
 
   tasks:
+    - name: Remove conflicting containerd package
+      apt:
+        name: containerd
+        state: absent
+      ignore_errors: yes
+
     - name: Remove conflicting packages
       apt:
         name: containerd
@@ -22,7 +27,7 @@
 
     - name: Ensure required packages are installed
       apt:
-        name: 
+        name:
           - apt-transport-https
           - ca-certificates
           - curl
@@ -40,6 +45,15 @@
     - name: Debug held packages
       debug:
         msg: "{{ held_packages.stdout_lines }}"
+
+    - name: Unhold any held packages
+      apt:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - containerd
+        - docker.io
+      when: held_packages.stdout_lines | length > 0
 
     - name: Resolve held packages if any
       apt:
@@ -61,7 +75,7 @@
     - name: Pull Docker image
       docker_image:
         name: "{{ docker_user }}/{{ image_name }}"
-        tag: "{{ commit_hash }}"  # Pull the image with the latest or specific tag
+        tag: "{{ commit_hash }}"
         source: pull
         state: present
 
@@ -69,13 +83,13 @@
       docker_container:
         name: website
         state: absent
-        force_kill: yes  # Forcefully stop and remove the existing container
+        force_kill: yes
 
     - name: Run new website container
       docker_container:
         name: website
-        image: "{{ docker_user }}/{{ image_name }}:{{ commit_hash }}"  # Use the image with the latest or specific tag
+        image: "{{ docker_user }}/{{ image_name }}:{{ commit_hash }}"
         state: started
         ports:
-          - "80:80"  # Map port 80 of the container to port 80 of the host
-        restart_policy: always  # Ensure the container restarts if it stops
+          - "80:80"
+        restart_policy: always
